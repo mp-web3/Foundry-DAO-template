@@ -33,6 +33,7 @@ contract MyGovernorTest is Test {
         govToken = new GovToken(OWNER);
         vm.startPrank(OWNER);
         govToken.mint(OWNER, INITIAL_SUPPLY);
+        govToken.delegate(OWNER);
 
         timelock = new Timelock(MIN_DELAY, proposers, executors, OWNER);
         governor = new MyGovernor(govToken, timelock);
@@ -71,17 +72,29 @@ contract MyGovernorTest is Test {
         calldatas.push(encodedFunctionCall);
         targets.push(address(box));
 
+        // Log balance of GovToken for OWNER before proposing
+        uint256 ownerBalanceBefore = govToken.balanceOf(OWNER);
+        console.log("Owner balance before proposing:", ownerBalanceBefore);
+
         // 1. Propose to the DAO
         uint256 proposalId = governor.propose(targets, values, calldatas, description);
         console.log(proposalId);
 
         // View the state of the proposal
-        console.log("Proposal State:", uint256(governor.state(proposalId)));
+        console.log("State after proposal:", uint256(governor.state(proposalId)));
 
         vm.warp(block.timestamp + VOTING_DELAY + 1 );
         vm.roll(block.number + VOTING_DELAY + 1 );
 
-        console.log("Proposal State:", uint256(governor.state(proposalId)));
+        // Log balance of GovToken for OWNER after proposing (before voting)
+        uint256 ownerBalanceAfter = govToken.balanceOf(OWNER);
+        console.log("Owner balance after proposing:", ownerBalanceAfter);
+        console.log("State after voting delay:", uint256(governor.state(proposalId)));
+
+        // Log voting power at snapshot
+        uint256 snapshot = governor.proposalSnapshot(proposalId);
+        uint256 ownerVotingPowerAtSnapshot = govToken.getPastVotes(OWNER, snapshot -1);
+        console.log("Owner voting power at snapshot:", ownerVotingPowerAtSnapshot);
 
         // 2. Vote
         string memory reason = "I like to vote";
@@ -90,9 +103,24 @@ contract MyGovernorTest is Test {
 
         vm.prank(OWNER);
         governor.castVoteWithReason(proposalId, voteWay, reason);
+        console.log("State after voting:", uint256(governor.state(proposalId)));
 
         vm.warp(block.timestamp + VOTING_PERIOD + 1);
         vm.roll(block.number + VOTING_PERIOD + 1);
+
+            // Check vote counts and quorum
+        (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes) = governor.proposalVotes(proposalId);
+        uint256 quorumRequired = governor.quorum(block.number - 1);
+        console.log("Votes For:", forVotes);
+        console.log("Votes Against:", againstVotes);
+        console.log("Votes Abstain:", abstainVotes);
+        console.log("Quorum Required:", quorumRequired);
+
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
+        vm.roll(block.number + VOTING_PERIOD + 1);
+
+        // Check state after voting period
+        console.log("State after voting period:", uint256(governor.state(proposalId)));
 
         // 3. Queue the TX before we can execute them
         bytes32 descriptionHash = keccak256(abi.encodePacked(description));
@@ -276,7 +304,16 @@ contract MyGovernorTest is Test {
         return SafeCast.toUint48(block.timestamp + delay);
     }
 
+    /////////////////////// GET VOTES AGAINST, FOR, AND ABSTAINED OF A PROPOSAL /////////////////////////////////////
+    Abstract Contract: GovernorCountingSimple.sol
+    Function: proposalVotes
 
 
+    function proposalVotes(
+        uint256 proposalId
+    ) public view virtual returns (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes) {
+        ProposalVote storage proposalVote = _proposalVotes[proposalId];
+        return (proposalVote.againstVotes, proposalVote.forVotes, proposalVote.abstainVotes);
+    }
 
 */
